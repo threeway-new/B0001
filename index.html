@@ -1459,7 +1459,14 @@
             const defaultMessage = `Hello MANA HUB! I'm interested in your services. My location: ${currentLocation.name} (${currentLocation.lat}, ${currentLocation.lng})`;
             const finalMessage = message || defaultMessage;
             const whatsappUrl = `https://wa.me/${currentWhatsAppNumber}?text=${encodeURIComponent(finalMessage)}`;
-            window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+            
+            // Auto-open WhatsApp immediately
+            window.location.href = whatsappUrl;
+            
+            // Fallback for desktop - also try window.open
+            setTimeout(() => {
+                window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+            }, 100);
         }
 
         // Page navigation
@@ -1547,19 +1554,20 @@ Special Instructions: ${formData.specialInstructions || 'None'}
 🏠 *Address:*
 ${formData.customerAddress}
 
-📍 *Live Location Details:*
-Latitude: ${locationData.latitude}
-Longitude: ${locationData.longitude}
-Accuracy: ${locationData.accuracy} meters
-Altitude: ${locationData.altitude || 'N/A'} meters
-Speed: ${locationData.speed || 'N/A'} m/s
-Heading: ${locationData.heading || 'N/A'}°
-Timestamp: ${new Date(locationData.timestamp).toLocaleString()}
+📍 *LIVE LOCATION DETAILS:*
+🌐 Coordinates: ${locationData.latitude}, ${locationData.longitude}
+🎯 Accuracy: ${locationData.accuracy} meters
+🏔️ Altitude: ${locationData.altitude} meters
+🧭 Heading: ${locationData.heading}°
+🚗 Speed: ${locationData.speed} km/h
+⏰ Captured: ${new Date(locationData.timestamp).toLocaleString()}
 
-🗺️ *Google Maps Link:*
-https://maps.google.com/?q=${locationData.latitude},${locationData.longitude}
+🗺️ *GOOGLE MAPS LINK:*
+${locationData.googleMapsLink}
 
-⏰ *Booking Time:* ${new Date().toLocaleString()}`;
+📅 *Booking Time:* ${new Date().toLocaleString()}
+
+*Click the Google Maps link above to see exact location!*`;
 
                 // Open WhatsApp
                 openWhatsApp(message);
@@ -1631,27 +1639,42 @@ Note: Approximate location (GPS not available)
 
                 const options = {
                     enableHighAccuracy: true,
-                    timeout: 15000,
+                    timeout: 20000,
                     maximumAge: 0
                 };
 
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
+                        const coords = position.coords;
                         const locationData = {
-                            latitude: position.coords.latitude,
-                            longitude: position.coords.longitude,
-                            accuracy: Math.round(position.coords.accuracy),
-                            altitude: position.coords.altitude ? Math.round(position.coords.altitude) : null,
-                            altitudeAccuracy: position.coords.altitudeAccuracy ? Math.round(position.coords.altitudeAccuracy) : null,
-                            heading: position.coords.heading,
-                            speed: position.coords.speed,
-                            timestamp: position.timestamp
+                            latitude: parseFloat(coords.latitude.toFixed(8)),
+                            longitude: parseFloat(coords.longitude.toFixed(8)),
+                            accuracy: coords.accuracy ? Math.round(coords.accuracy) : 'Unknown',
+                            altitude: coords.altitude ? Math.round(coords.altitude) : 'N/A',
+                            altitudeAccuracy: coords.altitudeAccuracy ? Math.round(coords.altitudeAccuracy) : 'N/A',
+                            heading: coords.heading ? Math.round(coords.heading) : 'N/A',
+                            speed: coords.speed ? Math.round(coords.speed * 3.6) : 'N/A', // Convert m/s to km/h
+                            timestamp: position.timestamp,
+                            googleMapsLink: `https://maps.google.com/?q=${coords.latitude.toFixed(8)},${coords.longitude.toFixed(8)}`
                         };
+                        console.log('Location captured:', locationData);
                         resolve(locationData);
                     },
                     (error) => {
                         console.error('Geolocation error:', error);
-                        reject(error);
+                        let errorMessage = 'Location access failed';
+                        switch(error.code) {
+                            case error.PERMISSION_DENIED:
+                                errorMessage = 'Location permission denied by user';
+                                break;
+                            case error.POSITION_UNAVAILABLE:
+                                errorMessage = 'Location information unavailable';
+                                break;
+                            case error.TIMEOUT:
+                                errorMessage = 'Location request timed out';
+                                break;
+                        }
+                        reject(new Error(errorMessage));
                     },
                     options
                 );
@@ -1670,32 +1693,37 @@ Note: Approximate location (GPS not available)
             const element = document.getElementById(elementId);
             if (element) {
                 element.innerHTML = `
-                    <div class="text-sm">
-                        <div><i class="fas fa-map-marker-alt mr-1"></i><strong>Coordinates:</strong> ${locationData.latitude.toFixed(6)}, ${locationData.longitude.toFixed(6)}</div>
-                        <div><i class="fas fa-crosshairs mr-1"></i><strong>Accuracy:</strong> ${locationData.accuracy} meters</div>
-                        ${locationData.altitude ? `<div><i class="fas fa-mountain mr-1"></i><strong>Altitude:</strong> ${locationData.altitude}m</div>` : ''}
-                        <div><i class="fas fa-clock mr-1"></i><strong>Captured:</strong> ${new Date(locationData.timestamp).toLocaleTimeString()}</div>
+                    <div class="text-sm space-y-1">
+                        <div><i class="fas fa-map-marker-alt mr-1 text-green-600"></i><strong>Coordinates:</strong> ${locationData.latitude}, ${locationData.longitude}</div>
+                        <div><i class="fas fa-crosshairs mr-1 text-blue-600"></i><strong>Accuracy:</strong> ${locationData.accuracy} meters</div>
+                        <div><i class="fas fa-mountain mr-1 text-purple-600"></i><strong>Altitude:</strong> ${locationData.altitude} meters</div>
+                        <div><i class="fas fa-compass mr-1 text-orange-600"></i><strong>Heading:</strong> ${locationData.heading}°</div>
+                        <div><i class="fas fa-tachometer-alt mr-1 text-red-600"></i><strong>Speed:</strong> ${locationData.speed} km/h</div>
+                        <div><i class="fas fa-clock mr-1 text-gray-600"></i><strong>Captured:</strong> ${new Date(locationData.timestamp).toLocaleString()}</div>
+                        <div><i class="fas fa-external-link-alt mr-1 text-indigo-600"></i><strong>Maps Link:</strong> <a href="${locationData.googleMapsLink}" target="_blank" class="text-blue-500 underline">Open in Google Maps</a></div>
                     </div>
                 `;
             }
         }
 
         function refreshCurrentLocation() {
-            updateLocationStatus('locationStatus', 'Testing location access...', false);
+            updateLocationStatus('locationStatus', 'Testing location access... Please allow location permission', false);
             
             getCurrentLocationWithAccuracy()
                 .then(locationData => {
-                    updateLocationStatus('locationStatus', `Location test successful! Accuracy: ${locationData.accuracy}m`, true);
+                    updateLocationStatus('locationStatus', `✅ Location test successful! Accuracy: ${locationData.accuracy}m`, true);
                     updateLocationDisplay('currentLocationDisplay', locationData);
                     currentLocation = {
                         name: 'Live Location',
                         lat: locationData.latitude,
                         lng: locationData.longitude
                     };
+                    showSuccess('Location captured successfully with all details!');
                 })
                 .catch(error => {
-                    updateLocationStatus('locationStatus', 'Location test failed. Will use approximate location on submit.', false);
+                    updateLocationStatus('locationStatus', `❌ Location test failed: ${error.message}. Will use approximate location on submit.`, false);
                     console.error('Location test error:', error);
+                    showSuccess('Location permission denied. Approximate location will be used.');
                 });
         }
 
@@ -2015,17 +2043,20 @@ Address: ${formData.deliveryAddress}
 Preferred Time: ${formData.deliveryTime || 'Anytime'}
 Special Instructions: ${formData.specialInstructions || 'None'}
 
-📍 *Live Location Details:*
-Latitude: ${locationData.latitude}
-Longitude: ${locationData.longitude}
-Accuracy: ${locationData.accuracy} meters
-Altitude: ${locationData.altitude || 'N/A'} meters
-Timestamp: ${new Date(locationData.timestamp).toLocaleString()}
+📍 *LIVE LOCATION DETAILS:*
+🌐 Coordinates: ${locationData.latitude}, ${locationData.longitude}
+🎯 Accuracy: ${locationData.accuracy} meters
+🏔️ Altitude: ${locationData.altitude} meters
+🧭 Heading: ${locationData.heading}°
+🚗 Speed: ${locationData.speed} km/h
+⏰ Captured: ${new Date(locationData.timestamp).toLocaleString()}
 
-🗺️ *Google Maps Link:*
-https://maps.google.com/?q=${locationData.latitude},${locationData.longitude}
+🗺️ *GOOGLE MAPS LINK:*
+${locationData.googleMapsLink}
 
-⏰ *Order Time:* ${new Date().toLocaleString()}`;
+📅 *Order Time:* ${new Date().toLocaleString()}
+
+*Click the Google Maps link above for precise delivery location!*`;
 
                 // Open WhatsApp
                 openWhatsApp(message);
@@ -2279,5 +2310,5 @@ Note: Approximate location (GPS not available)
         // Initialize app when DOM is loaded
         document.addEventListener('DOMContentLoaded', initializeApp);
     </script>
- <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'997fb42bb5e9179c',t:'MTc2MjA0NTMxOS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'997fd453a4fe179c',t:'MTc2MjA0NjYzNi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
